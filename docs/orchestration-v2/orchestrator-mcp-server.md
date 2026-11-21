@@ -257,8 +257,8 @@ Set `target.options` using the options returned by `orchestrator_capabilities`, 
 For local delegation, use `isolation: "worktree"` for a separate prepared checkout from
 the parent's commit; the default `"shared"` uses the parent's checkout. Uncommitted parent
 edits are not copied. A linked-environment target (`target.environmentId`) runs in the remote
-project's checkout and rejects worktree isolation. To launch an isolated thread there, use
-`t3_thread_launch` with `environmentId` and a worktree `workspaceStrategy`.
+project's checkout; with worktree isolation it gets a new worktree from that checkout's `HEAD`,
+since the parent's commit may not exist there.
 
 A provider runs a runtime mode it does not offer as `approval-required`, so a
 child would ask for approval on every command. `orchestrator_capabilities`

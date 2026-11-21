@@ -109,6 +109,8 @@ interface BoxThread {
   readonly delegatedFrom: Ref.Ref<ThreadLaunch.ThreadLaunchInput["delegatedFrom"] | null>;
   /** The model and modes it was launched with. */
   readonly launchedWith: Ref.Ref<LaunchedWith | null>;
+  /** The workspace the thread there was launched in. */
+  readonly workspaceStrategy: Ref.Ref<ThreadLaunch.ThreadLaunchWorkspaceStrategy | null>;
   /** The first message the thread there was launched with. */
   readonly message: Ref.Ref<string | null>;
   readonly status: Ref.Ref<OrchestrationV2Run["status"]>;
@@ -168,6 +170,7 @@ const makeBoxThread = Effect.gen(function* () {
     ),
     delegatedFrom: yield* Ref.make<ThreadLaunch.ThreadLaunchInput["delegatedFrom"] | null>(null),
     launchedWith: yield* Ref.make<LaunchedWith | null>(null),
+    workspaceStrategy: yield* Ref.make<ThreadLaunch.ThreadLaunchWorkspaceStrategy | null>(null),
     message: yield* Ref.make<string | null>(null),
     status: yield* Ref.make<OrchestrationV2Run["status"]>("running"),
     reply: yield* Ref.make<string | null>("Working…"),
@@ -528,12 +531,14 @@ const boxToolkitLayer = (thread: BoxThread) => {
       ),
   });
   const layerBoxLaunches = Layer.mock(ThreadLaunch.ThreadLaunchService)({
+    checkWorktreeBase: () => Effect.void,
     launch: (input) =>
       Ref.get(thread.runless).pipe(
         Effect.flatMap((runless) =>
           Ref.set(thread.launched, input.threadId!).pipe(
             Effect.andThen(Ref.set(thread.linkOrigin, input.linkOrigin ?? null)),
             Effect.andThen(Ref.set(thread.delegatedFrom, input.delegatedFrom ?? null)),
+            Effect.andThen(Ref.set(thread.workspaceStrategy, input.workspaceStrategy)),
             Effect.andThen(Ref.set(thread.message, input.initialMessage?.text ?? null)),
             Effect.andThen(
               Ref.set(thread.launchedWith, {
@@ -1333,7 +1338,7 @@ it.effect("a task naming another driver there never runs its model on the parent
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.effect("refuses worktree isolation for a task there before launching anything", () =>
+it.effect("a task there with worktree isolation gets its own checkout of that project", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const thread = yield* makeBoxThread;
@@ -1351,9 +1356,12 @@ it.effect("refuses worktree isolation for a task there before launching anything
         target: { environmentId: box.environmentId },
         isolation: "worktree",
       });
-      expect(result.isError).toBe(true);
-      expect(JSON.stringify(result.content)).toContain("isolation");
-      expect(yield* Ref.get(thread.launched)).toBeNull();
+      expect(result.isError, JSON.stringify(result.content)).toBe(false);
+      expect(yield* Ref.get(thread.workspaceStrategy)).toEqual({
+        type: "worktree",
+        baseRef: "HEAD",
+        startFromOrigin: false,
+      });
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
