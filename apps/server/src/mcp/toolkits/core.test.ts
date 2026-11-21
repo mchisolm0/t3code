@@ -226,6 +226,55 @@ it.effect("an answered question reports already answered instead of not found", 
   );
 });
 
+it.effect("a pending request list names pending approvals apart from questions", () => {
+  const shell = McpToolAccessTestkit.liveThreadShell(threadId);
+  const projection = McpToolAccessTestkit.idleThreadProjection(shell);
+  const pending = (id: string, kind: "user_input" | "command", status = "pending" as const) => ({
+    id: RuntimeRequestId.make(id),
+    nodeId: NodeId.make("root"),
+    providerTurnId: null,
+    nativeRequestRef: null,
+    kind,
+    status,
+    responseCapability: { type: "message" as const },
+    createdAt: shell.createdAt,
+    resolvedAt: null,
+  });
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({ name: "t3_pending_request", arguments: { action: "list" } })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(result.structuredContent).toEqual({
+      requestIds: ["question"],
+      approvals: [{ requestId: "approval", kind: "command" }],
+    });
+  }).pipe(
+    Effect.provide(
+      layerThreadToolkit.pipe(
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: () => Effect.succeed(shell),
+            getProjectThreadRecords: () =>
+              Effect.succeed({
+                ...projection,
+                runtimeRequests: [
+                  pending("question", "user_input"),
+                  pending("approval", "command"),
+                ],
+              }),
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
 it.effect("a pending question read keeps option previews", () => {
   const shell = McpToolAccessTestkit.liveThreadShell(threadId);
   const requestId = RuntimeRequestId.make("previewed-question");

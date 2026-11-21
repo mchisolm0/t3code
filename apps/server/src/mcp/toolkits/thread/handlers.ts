@@ -6,8 +6,10 @@ import {
   type RunId,
   OrchestratorMcpFailure,
   type OrchestrationV2Command,
+  ProviderRequestKind,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { modelSelectionCommandType } from "@t3tools/shared/model";
 import { topOfPinnedRunOrderKey } from "@t3tools/shared/pinOrderKey";
 
@@ -66,6 +68,8 @@ const topOfPinnedRunKey = Effect.fn("mcp.topOfPinnedRunKey")(function* (
   const pinnedKeys = index.flatMap((entry) => (entry.pinnedAt == null ? [] : [entry.pinOrderKey]));
   return topOfPinnedRunOrderKey(pinnedKeys) ?? undefined;
 });
+
+const isApprovalKind = Schema.is(ProviderRequestKind);
 
 const readQuestion = Effect.fn("mcp.readQuestion")(function* (input: {
   threadId?: ThreadId | undefined;
@@ -251,10 +255,16 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       Effect.gen(function* () {
         if (input.action === "list") {
           const { projection } = yield* readThread(input.threadId, ["runtimeRequests"]);
+          const pending = projection.runtimeRequests.filter(
+            (request) => request.status === "pending",
+          );
           return {
-            requestIds: projection.runtimeRequests
-              .filter((request) => request.kind === "user_input" && request.status === "pending")
+            requestIds: pending
+              .filter((request) => request.kind === "user_input")
               .map((request) => request.id),
+            approvals: pending.flatMap((request) =>
+              isApprovalKind(request.kind) ? [{ requestId: request.id, kind: request.kind }] : [],
+            ),
           };
         }
         const requestId = yield* required(input.requestId, "requestId");
